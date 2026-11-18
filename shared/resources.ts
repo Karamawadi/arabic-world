@@ -10,8 +10,8 @@ export const PERM_LABELS: Record<string, string> = {
 export const SOUND_KEYS = ['achievement', 'world_enter', 'world_exit', 'win', 'lose', 'mission_done', 'block_break', 'block_place', 'step', 'hurt', 'eat', 'ui_click', 'chat',
   'ambient_desert', 'ambient_sea', 'ambient_mountain', 'ambient_city', 'rain', 'wind', 'thunder', 'music_menu', 'music_game'];
 export const PATTERNS = ['grain', 'sand', 'rock', 'layers', 'pebble', 'crack', 'smooth', 'brick', 'planks', 'bark', 'bark_x', 'rings', 'leaves', 'ore', 'glass', 'glass2', 'weave', 'lattice', 'vent', 'sadu', 'tiles', 'stripes',
-  'metal', 'marble', 'coral', 'turf', 'lantern', 'door', 'door_open', 'oyster', 'water', 'shrub', 'flower', 'tuft', 'reed'];
-export const BLOCK_CATS = ['natural', 'wood', 'plant', 'ore', 'building', 'heritage', 'modern', 'decor', 'liquid'];
+  'metal', 'marble', 'coral', 'turf', 'lantern', 'door', 'door_open', 'oyster', 'water', 'shrub', 'flower', 'tuft', 'reed', 'table_top', 'table_side', 'furnace', 'furnace_top', 'tnt_side', 'tnt_top'];
+export const BLOCK_CATS = ['natural', 'wood', 'plant', 'ore', 'building', 'heritage', 'modern', 'decor', 'special', 'liquid'];
 export const ITEM_CATS = ['material', 'tool', 'weapon', 'food', 'vehicle', 'heritage'];
 export const STRUCT_KEYS = ['fort', 'watchtower', 'barjeel_house', 'souq', 'tent', 'well', 'skyscraper', 'villa', 'dome_hall', 'pier', 'dhow', 'lighthouse', 'palm_farm', 'pyramid', 'rock_tomb'];
 
@@ -28,7 +28,7 @@ export const RES: Record<string, Resource> = {
     { n: 'params', l: 'إعدادات التضاريس (JSON)', t: 'json', hide: true, d: { coast: 'west', duneAmp: 6, trees: [{ type: 'palm', density: 0.01, zone: 'low' }], plants: [], structures: [{ key: 'tent', freq: 0.1 }] } },
     { n: 'sky', l: 'السماء والضباب (JSON)', t: 'json', hide: true, d: { day: '#8cc4ea', horizon: '#f4e2c2', fog: 0.011 } },
     { n: 'weather', l: 'أوزان الطقس (JSON)', t: 'json', hide: true, d: { clear: 78, rain: 4, storm: 2, fog: 6, sandstorm: 10 } },
-    { n: 'animals', l: 'الحيوانات (JSON)', t: 'json', hide: true, d: ['camel'] }, { n: 'ambient', l: 'صوت المحيط', t: 'sel', o: ['desert', 'sea', 'mountain', 'city'], d: 'desert' }, en] },
+    { n: 'animals', l: 'الحيوانات (JSON)', t: 'json', hide: true, d: ['camel'], hint: 'camel horse goat sheep cow chicken oryx gazelle fox cat flamingo turtle fish' }, { n: 'ambient', l: 'صوت المحيط', t: 'sel', o: ['desert', 'sea', 'mountain', 'city'], d: 'desert' }, en] },
   structures: { table: 'structures', perm: 'content.manage', title: 'المباني الجاهزة (Prefabs)', pk: 'id', fields: [key, ...names, { n: 'w', l: 'العرض', t: 'num', d: 5 }, { n: 'd', l: 'العمق', t: 'num', d: 5 },
     { n: 'site', l: 'الموقع', t: 'sel', o: ['land', 'water', 'coast', 'any'], d: 'land' },
     { n: 'ops', l: 'عمليات البناء (JSON)', t: 'json', hide: true, d: [['hollow', 0, 0, 0, 4, 3, 4, 'mud_brick'], ['box', 0, 4, 0, 4, 4, 4, 'arish'], ['clear', 2, 0, 0, 2, 1, 0], ['set', 2, 2, 2, 'lantern']], hint: '["box"|"hollow",x0,y0,z0,x1,y1,z1,"block"] ، ["clear",x0,y0,z0,x1,y1,z1] ، ["set",x,y,z,"block"]' }, en] },
@@ -38,12 +38,12 @@ export const RES: Record<string, Resource> = {
     { n: 'hardness', l: 'الصلابة (ثوانٍ)', t: 'num', d: 1 }, { n: 'tool', l: 'الأداة المناسبة', t: 'sel', o: ['', 'pick', 'axe', 'shovel'], hide: true }, { n: 'min_tier', l: 'أدنى مستوى أداة', t: 'num', d: 0, hide: true },
     { n: 'drop_key', l: 'ما يسقطه (key أو none)', t: 'text', hide: true }, { n: 'drop_n', l: 'عدد السقوط', t: 'num', d: 1, hide: true }, { n: 'drop_chance', l: 'احتمال السقوط', t: 'num', d: 1, hide: true },
     { n: 'emissive', l: 'مضيء', t: 'bool', d: 0, hide: true }, { n: 'rot_group', l: 'مجموعة التدوير', t: 'text', hide: true }, { n: 'toggle', l: 'يتحول عند التفاعل إلى', t: 'text', hide: true },
-    { n: 'recipe', l: 'وصفة الصنع (JSON)', t: 'json', hide: true, hint: '{"in":{"sand":2},"out":1}' }, en] },
+    { n: 'recipe', l: 'وصفة الصنع (JSON)', t: 'json', hide: true, hint: '{"in":{"sand":2},"out":1} — أضف "at":"table" لطاولة الصناعة أو "at":"furnace" للفرن' }, en] },
   items: { table: 'items', perm: 'content.manage', title: 'العناصر والأدوات', pk: 'id', order: 'sort,id', fields: [key, ...names, { n: 'category', l: 'التصنيف', t: 'sel', o: ITEM_CATS, d: 'material' },
-    { n: 'icon', l: 'الأيقونة (JSON)', t: 'json', hide: true, d: ['#c7ccd1', '#8a6a3c', 'gem'], hint: '[لون1, لون2, شكل] الأشكال: stick ingot gem orb pick axe shovel sword shield disc cup boat buggy' },
+    { n: 'icon', l: 'الأيقونة (JSON)', t: 'json', hide: true, d: ['#c7ccd1', '#8a6a3c', 'gem'], hint: '[لون1, لون2, شكل] الأشكال: stick ingot gem orb pick axe shovel sword shield disc cup boat buggy meat drumstick fish leather feather powder wool' },
     { n: 'tool', l: 'نوع الأداة', t: 'sel', o: ['', 'pick', 'axe', 'shovel', 'sword', 'shield'] }, { n: 'tier', l: 'المستوى', t: 'num', d: 0 }, { n: 'power', l: 'القوة', t: 'num', d: 0, hide: true },
     { n: 'food', l: 'قيمة الغذاء', t: 'num', d: 0 }, { n: 'vehicle', l: 'مركبة', t: 'sel', o: ['', 'boat', 'buggy'], hide: true }, { n: 'stack', l: 'حد التكديس', t: 'num', d: 64, hide: true },
-    { n: 'recipe', l: 'وصفة الصنع (JSON)', t: 'json', hide: true, hint: '{"in":{"stone":3,"stick":2},"out":1}' }, sort, en] },
+    { n: 'recipe', l: 'وصفة الصنع (JSON)', t: 'json', hide: true, hint: '{"in":{"stone":3,"stick":2},"out":1,"at":"table"} — at: table أو furnace أو بدون' }, sort, en] },
   characters: { table: 'characters', perm: 'content.manage', title: 'الشخصيات والأزياء', pk: 'id', order: 'slot,sort,id', fields: [key, ...names, { n: 'slot', l: 'الخانة', t: 'sel', o: ['outfit', 'head', 'hair', 'accessory'], req: true, d: 'outfit' },
     { n: 'kind', l: 'القالب', t: 'sel', o: ['robe', 'cloak', 'casual', 'none', 'ghutra', 'turban', 'cap', 'shayla', 'short', 'long', 'curly', 'glasses', 'backpack', 'falcon', 'belt'], req: true, d: 'robe' },
     { n: 'colors', l: 'الألوان (JSON)', t: 'json', d: { main: '#f5f3ee', trim: '#d6a94a' }, hint: '{"main":"#..","trim":"#.."}' }, sort, en] },

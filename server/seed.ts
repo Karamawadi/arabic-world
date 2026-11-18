@@ -326,6 +326,57 @@ function misc() {
   st('max_players_limit', 16); st('motd_ar', ''); st('motd_en', ''); st('default_dialect', 'ae'); st('autosave_sec', 15);
 }
 
+// ترقية المحتوى (الإصدار 2): طاولة صناعة، فرن، ديناميت، طعام الصيد، حيوانات جديدة، وصفات تحتاج محطات
+function migrate2() {
+  if ((get("SELECT value FROM settings WHERE key='content_version'")?.value | 0) >= 2) return;
+  const blk = (key: string, ar: string, en: string, category: string, tex: any, x: any = {}) => {
+    if (get('SELECT 1 x FROM blocks WHERE key=?', key)) return;
+    const id = (get('SELECT MAX(id) m FROM blocks').m || 0) + 1; if (id > 255) return;
+    run(`INSERT INTO blocks(id,key,name_ar,name_en,category,tex,hardness,tool,recipe,sort) VALUES(?,?,?,?,?,?,?,?,?,?)`, id, key, ar, en, category, S(tex), x.h ?? 1, x.tool || null, x.recipe ? S(x.recipe) : null, id);
+  };
+  blk('crafting_table', 'طاولة الصناعة', 'Crafting Table', 'building', { top: ['#b0844e', '#6e4c2a', 'table_top'], side: ['#9b6e3d', '#5a3a1e', 'table_side'], bottom: ['#c9a372', '#ad8857', 'planks'] }, { h: 1.2, tool: 'axe', recipe: { in: { palm_planks: 4 }, out: 1 } });
+  blk('furnace', 'فرن', 'Furnace', 'building', { top: ['#7d7f84', '#5f6166', 'furnace_top'], side: ['#7d7f84', '#2a1a10', 'furnace'], bottom: ['#8d8f94', '#75777d', 'rock'] }, { h: 2, tool: 'pick', recipe: { in: { stone: 8 }, out: 1, at: 'table' } });
+  blk('tnt', 'ديناميت', 'TNT', 'special', { top: ['#d23a2a', '#e8e2d0', 'tnt_top'], side: ['#d23a2a', '#f2eee4', 'tnt_side'], bottom: ['#d23a2a', '#e8e2d0', 'tnt_top'] }, { h: 0.1, recipe: { in: { gunpowder: 5, sand: 4 }, out: 1, at: 'table' } });
+  let n = (get('SELECT MAX(sort) m FROM items').m || 0) + 1;
+  const it = (key: string, ar: string, en: string, category: string, icon: any, x: any = {}) => {
+    if (get('SELECT 1 x FROM items WHERE key=?', key)) return;
+    run('INSERT INTO items(key,name_ar,name_en,category,icon,food,stack,recipe,sort) VALUES(?,?,?,?,?,?,?,?,?)', key, ar, en, category, S(icon), x.food || 0, 64, x.recipe ? S(x.recipe) : null, n++);
+  };
+  const F = (k: string) => ({ in: { [k]: 1 }, out: 1, at: 'furnace' });
+  it('raw_meat', 'لحم نيء', 'Raw Meat', 'food', ['#d9534f', '#f2c0b8', 'meat'], { food: 2 });
+  it('cooked_meat', 'مشاوي لحم', 'Grilled Meat', 'food', ['#8a4a22', '#c98a4a', 'meat'], { food: 8, recipe: F('raw_meat') });
+  it('raw_chicken', 'دجاج نيء', 'Raw Chicken', 'food', ['#f0c7b0', '#e8a890', 'drumstick'], { food: 2 });
+  it('cooked_chicken', 'دجاج مشوي', 'Grilled Chicken', 'food', ['#c98a3a', '#e8b870', 'drumstick'], { food: 6, recipe: F('raw_chicken') });
+  it('raw_fish', 'سمك نيء', 'Raw Fish', 'food', ['#8fb3c9', '#5d87a3', 'fish'], { food: 2 });
+  it('cooked_fish', 'سمك مشوي', 'Grilled Fish', 'food', ['#b07a3a', '#d9a860', 'fish'], { food: 6, recipe: F('raw_fish') });
+  it('leather', 'جلد', 'Leather', 'material', ['#8a5a2c', '#6a4220', 'leather']);
+  it('feather', 'ريشة', 'Feather', 'material', ['#f4f0ea', '#c9c2b6', 'feather']);
+  it('wool', 'صوف', 'Wool', 'material', ['#f4f0ea', '#d8d2c6', 'wool']);
+  it('gunpowder', 'بارود', 'Gunpowder', 'material', ['#5a5a5a', '#3a3a3a', 'powder']);
+  // الوصفات: السبائك والزجاج في الفرن، والأدوات والأسلحة على طاولة الصناعة
+  const setR = (key: string, r: any) => { run('UPDATE blocks SET recipe=? WHERE key=?', S(r), key); run('UPDATE items SET recipe=? WHERE key=?', S(r), key); };
+  setR('copper_ingot', F('copper_ore')); setR('iron_ingot', F('iron_ore')); setR('gold_ingot', F('gold_ore')); setR('glass', F('sand'));
+  setR('sadu', { in: { wool: 2, desert_flower: 1 }, out: 1 }); setR('tent_cloth', { in: { wool: 3 }, out: 2, at: 'table' });
+  for (const key of ['wood_pickaxe', 'stone_pickaxe', 'iron_pickaxe', 'diamond_pickaxe', 'stone_axe', 'iron_axe', 'shovel', 'sword', 'shield', 'abra', 'buggy', 'steel', 'lantern', 'door_closed', 'gold_block', 'diamond_block', 'tinted_glass', 'barjeel', 'mashrabiya', 'zellige']) {
+    for (const t of ['blocks', 'items']) { const r = get(`SELECT recipe FROM ${t} WHERE key=?`, key); if (r?.recipe) { const j = JSON.parse(r.recipe); j.at = 'table'; run(`UPDATE ${t} SET recipe=? WHERE key=?`, S(j), key); } }
+  }
+  // حيوانات أكثر لكل بيئة
+  const A: Record<string, string[]> = {
+    rak_mountains: ['camel', 'goat', 'oryx', 'horse', 'sheep', 'fox', 'gazelle', 'chicken'], dubai_city: ['camel', 'oryx', 'horse', 'cat', 'chicken', 'gazelle'],
+    abudhabi_dunes: ['camel', 'oryx', 'gazelle', 'fox', 'horse', 'flamingo'], fujairah_coast: ['goat', 'sheep', 'oryx', 'cow', 'chicken', 'turtle'],
+    sharjah_heritage: ['camel', 'goat', 'sheep', 'cat', 'chicken', 'horse'], ajman_beach: ['camel', 'goat', 'flamingo', 'turtle', 'chicken', 'cat'],
+    uaq_lagoons: ['goat', 'flamingo', 'turtle', 'sheep', 'chicken'], saudi_najd: ['camel', 'oryx', 'gazelle', 'horse', 'sheep', 'fox'],
+    jordan_rum: ['camel', 'goat', 'sheep', 'horse', 'fox'], oman_hajar: ['goat', 'camel', 'oryx', 'sheep', 'cow', 'chicken'],
+    qatar_coast: ['camel', 'oryx', 'flamingo', 'horse', 'gazelle'], kuwait_bay: ['camel', 'sheep', 'horse', 'chicken', 'fox'],
+    bahrain_isles: ['goat', 'horse', 'chicken', 'flamingo', 'cat'], egypt_nile: ['camel', 'cow', 'sheep', 'chicken', 'cat', 'horse', 'goat'],
+    arabian_desert: ['camel', 'oryx', 'gazelle', 'fox', 'horse'], uae_mountains: ['goat', 'oryx', 'sheep', 'fox', 'gazelle'], future_city: ['cat', 'chicken', 'horse'],
+    lost_island: ['goat', 'sheep', 'cow', 'chicken', 'horse', 'fox', 'turtle'], seas_islands: ['flamingo', 'turtle', 'goat', 'chicken'], uae_heritage: ['camel', 'goat', 'sheep', 'chicken', 'horse', 'cat'],
+  };
+  for (const k in A) run('UPDATE environments SET animals=? WHERE key=?', S(A[k]), k);
+  for (const k of ['help.run', 'help.touch', 'help.dismount']) { run("UPDATE translations SET value=? WHERE key=? AND lang='ar' AND dialect=''", AR[k], k); run("UPDATE translations SET value=? WHERE key=? AND lang='en' AND dialect=''", EN[k], k); }
+  run("INSERT INTO settings(key,value) VALUES('content_version','2') ON CONFLICT(key) DO UPDATE SET value='2'");
+}
+
 export function seed() {
   tx(() => {
     if (!count('blocks')) blocks();
@@ -339,6 +390,7 @@ export function seed() {
     for (const k in AR) ins(k, 'ar', '', AR[k]);
     for (const k in EN) ins(k, 'en', '', EN[k]);
     for (const d in DIALECTS) for (const k in DIALECTS[d]) ins(k, 'ar', d, DIALECTS[d][k]);
+    migrate2();
   });
   void all; void now;
 }

@@ -59,6 +59,8 @@ class AudioSys {
       case 'chat': this.tone(880, t, 0.08, 'sine', 0.12, d); this.tone(1175, t + 0.07, 0.1, 'sine', 0.1, d); break;
       case 'pickup': this.tone(700, t, 0.08, 'sine', 0.14, d, 1100); break;
       case 'thunder': this.burst(t, 2.2, 140, 0.9, d); this.burst(t + 0.1, 0.5, 2500, 0.2, d); break;
+      case 'fuse': this.burst(t, 1.2, 4000, 0.18, d, 'highpass'); break;
+      case 'explode': this.burst(t, 1.6, 220, 1.0, d); this.burst(t, 0.4, 1200, 0.5, d); this.tone(70, t, 0.8, 'sine', 0.5, d, 30); break;
       case 'splash': this.burst(t, 0.3, 1400, 0.3, d, 'bandpass'); break;
     }
   }

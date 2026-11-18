@@ -5,6 +5,7 @@ import { iconURL } from '../engine/atlas';
 import { audio } from '../engine/audio';
 import { isTouch } from '../common/api';
 import { SettingsForm, type Ctx } from './App';
+import { SECTIONS } from '../engine/game';
 
 export function GameView({ c, code, onExit, onAgain }: { c: Ctx; code: string; onExit: () => void; onAgain: () => void }) {
   const cv = useRef<HTMLCanvasElement>(null);
@@ -50,12 +51,12 @@ function Hud({ c, g, touch, onExit, onAgain }: { c: Ctx; g: Game; touch: boolean
       <div className="pill" dir="auto">{ui.world?.name} · <span className="code">{ui.world?.code}</span></div>
       <div className="pill">{wIcon[ui.weather]} {String(hour).padStart(2, '0')}:{String(min).padStart(2, '0')} · 👥 {ui.players.length}/{ui.world?.max}{c.settings.showCoords && <> · {ui.coords.join(', ')}</>}</div>
       {left >= 0 && <div className="pill" style={left <= 300 ? { background: 'rgba(170,40,20,.85)' } : undefined}>⏳ {t('sess.left')} {mmss(left)}</div>}
-      <div className="pill">{ui.fps} FPS · {ui.ping}ms{ui.flying ? ' · ✈️' : ''}{ui.vehicle ? ' · ' + ({ boat: '⛵', buggy: '🏎️', camel: '🐪' } as any)[ui.vehicle] : ''}{!ui.canBuild ? ' · 👁️ ' + t('role.visitor') : ''}</div>
+      <div className="pill">{ui.fps} FPS · {ui.ping}ms{ui.flying ? ' · ✈️' : ''}{ui.sprinting ? ' · 🏃' : ''}{ui.sneaking ? ' · 🤫' : ''}{ui.vehicle ? ' · ' + ({ boat: '⛵', buggy: '🏎️', camel: '🐪', horse: '🐎' } as any)[ui.vehicle] : ''} · {t('mode.' + ui.world?.mode)}{!ui.canBuild ? ' · 👁️ ' + t('role.visitor') : ''}</div>
     </div>
-    <canvas ref={mini} className="mini" width={118} height={118} />
+    <button className="minibtn pe" onClick={() => g.setPanel('map')} aria-label="map"><canvas ref={mini} className="mini" width={140} height={140} /><span>🗺️ {t('map.open')}{touch ? '' : ' (M)'}</span></button>
     <div className="topbtns pe">
       <button onClick={() => g.setPanel('pause')} aria-label="menu">☰</button><button onClick={() => g.setPanel('inventory')} aria-label="inventory">🎒</button>
-      <button onClick={() => g.setPanel('chat')} aria-label="chat">💬</button><button onClick={() => g.setPanel('missions')} aria-label="missions">📜</button>
+      <button onClick={() => g.setPanel('chat')} aria-label="chat">💬</button><button onClick={() => g.setPanel('missions')} aria-label="missions">📜</button><button onClick={() => g.cycleView()} aria-label="view">🎥</button>
     </div>
     <div className="notes">{ui.notices.map((n: any) => <div className="note" key={n.id} dir="auto">{n.text}</div>)}</div>
     {ui.chal && <div className="chal">🏆 {(() => { const m = mdef(ui.chal.id); return m ? (c.lang === 'en' ? m.title_en : m.title_ar) : ''; })()} — {ui.chal.progress}/{ui.chal.count} · ⏱️ {Math.floor(ui.chal.left / 60)}:{String(ui.chal.left % 60).padStart(2, '0')}</div>}
@@ -68,6 +69,8 @@ function Hud({ c, g, touch, onExit, onAgain }: { c: Ctx; g: Game; touch: boolean
     {ui.panel === 'players' && <div className="ov clear" onClick={() => g.setPanel('')}><Players c={c} g={g} /></div>}
     {ui.panel === 'pause' && <Pause c={c} g={g} onExit={onExit} touch={touch} />}
     {ui.panel === 'inventory' && <Inventory c={c} g={g} />}
+    {ui.panel === 'furnace' && <Furnace c={c} g={g} />}
+    {ui.panel === 'map' && <MapPanel c={c} g={g} />}
     {ui.panel === 'chat' && <Chat c={c} g={g} />}
     {ui.panel === 'missions' && <Missions c={c} g={g} />}
     {ui.panel === 'npc' && ui.npc && <div className="ov clear"><div className="panel" style={{ maxWidth: 480 }}><h2>🗣️ {t('npc.' + ui.npc.role + '.name')}</h2><p style={{ fontSize: '1.1rem', lineHeight: 1.7 }}>{t(ui.npc.say, { name: g.you.name })}</p>
@@ -97,6 +100,7 @@ function Touch({ g, fly, flying, vehicle }: { g: Game; fly: boolean; flying: boo
     {fly && <button className={'tbtn pe s' + (flying ? ' act' : '')} style={{ right: R, bottom: `calc(226px + ${B})` }} onClick={() => g.toggleFly()} aria-label="fly">✈️</button>}
     {vehicle && <button className="tbtn pe s act" style={{ right: `calc(76px + env(safe-area-inset-right))`, bottom: `calc(226px + ${B})` }} onClick={() => g.dismount()} aria-label="dismount">⏏</button>}
     <button className="tbtn pe s" style={{ left: 'calc(170px + env(safe-area-inset-left))', bottom: `calc(84px + ${B})` }} onClick={() => g.rotateHeld()} aria-label="rotate">⟳</button>
+    <button className={'tbtn pe s' + (g.tsneak ? ' act' : '')} style={{ left: 'calc(170px + env(safe-area-inset-left))', bottom: `calc(140px + ${B})` }} onClick={() => { if (g.player.vehicle) g.dismount(); else { g.tsneak = !g.tsneak; g.emit(true); } }} aria-label="sneak">🤫</button>
   </>;
 }
 
@@ -123,47 +127,95 @@ function Pause({ c, g, onExit, touch }: { c: Ctx; g: Game; onExit: () => void; t
     {tab === 'players' && <Players c={c} g={g} />}
     {tab === 'settings' && <SettingsForm c={c} inGame />}
     {tab === 'world' && owner && <div className="form">
+      <div><b>🎮 {t('pause.mode')}</b><div className="rowx" style={{ marginTop: 6 }}>{Object.keys(c.content.settings.mode_rules).map((k) => <button key={k} className={'btn sm ' + (ui.world?.mode === k ? 'teal' : 'light')} onClick={() => g.worldSet({ mode: k })}>{t('mode.' + k)}</button>)}</div><small style={{ color: 'var(--mute)' }}>{t('pause.mode_hint')}</small></div>
       <div><b>{t('create.start_time')}</b><div className="rowx" style={{ marginTop: 6 }}>{[[0.27, 'morning'], [0.5, 'noon'], [0.73, 'sunset'], [0, 'night']].map(([v, k]) => <button key={k} className="btn sm light" onClick={() => g.worldSet({ time: v })}>{t('time.' + k)}</button>)}</div></div>
       <div><b>{t('create.weather')}</b><div className="rowx" style={{ marginTop: 6 }}>{['clear', 'rain', 'storm', 'fog', 'sandstorm'].map((k) => <button key={k} className={'btn sm ' + (ui.weather === k ? 'teal' : 'light')} onClick={() => g.worldSet({ weather: k })}>{t('weather.' + k)}</button>)}</div></div>
       <div><b>{t('create.visitor_perm')}</b><div className="rowx" style={{ marginTop: 6 }}>{['build', 'view'].map((k) => <button key={k} className={'btn sm ' + (ui.world?.settings?.visitor_perm === k ? 'teal' : 'light')} onClick={() => g.worldSet({ visitor_perm: k })}>{t('perm.' + k)}</button>)}</div></div></div>}
     {tab === 'help' && <div className="list" style={{ lineHeight: 1.9 }}>{touch ? <div>{t('help.touch')}</div> : <>
-      <div><span className="kbd">W A S D</span> {t('help.move')} · <span className="kbd">Space</span> {t('help.jump')} · <span className="kbd">Shift</span> {t('help.run')}</div>
+      <div><span className="kbd">W A S D</span> {t('help.move')} · <span className="kbd">Space</span> {t('help.jump')} · <span className="kbd">W W</span> {t('help.run')} · <span className="kbd">Shift</span> {t('help.sneak')}</div>
       <div><span className="kbd">🖱 L</span> {t('help.break')} · <span className="kbd">🖱 R</span> {t('help.place')} · <span className="kbd">1-9</span> {t('help.hotbar')}</div>
-      <div><span className="kbd">E</span> {t('hud.inventory')} · <span className="kbd">T</span> {t('hud.chat')} · <span className="kbd">M</span> {t('hud.missions')} · <span className="kbd">Tab</span> {t('hud.players')}</div>
-      <div><span className="kbd">F</span> {t('help.fly')} · <span className="kbd">R</span> {t('help.rotate')} · <span className="kbd">V</span> {t('help.camera')} · <span className="kbd">Q</span> {t('help.dismount')}</div></>}
+      <div><span className="kbd">E</span> {t('hud.inventory')} · <span className="kbd">T</span> {t('hud.chat')} · <span className="kbd">M</span> {t('map.title')} · <span className="kbd">J</span> {t('hud.missions')} · <span className="kbd">Tab</span> {t('hud.players')} · <span className="kbd">Esc</span> {t('help.close')}</div>
+      <div><span className="kbd">F</span> {t('help.fly')} · <span className="kbd">R</span> {t('help.rotate')} · <span className="kbd">V</span> {t('help.camera')} · <span className="kbd">Shift / Q</span> {t('help.dismount')}</div>
+      <div><span className="kbd">/</span> {t('help.commands')}: <span className="kbd">/tp x y z</span> <span className="kbd">/tp name</span> <span className="kbd">/spawn</span> <span className="kbd">/gamemode creative</span> <span className="kbd">/give tnt 5</span> <span className="kbd">/time night</span> <span className="kbd">/help</span></div></>}
       <div style={{ color: 'var(--mute)' }}>{t('msg.tip_break')}</div></div>}
   </div></div>;
 }
 
-const CATS = ['all', 'natural', 'wood', 'plant', 'building', 'heritage', 'modern', 'decor', 'ore', 'tool', 'weapon', 'food', 'vehicle', 'material'];
+// أقسام المعرض الإبداعي (كل قسم لوحده)
+const CAT_TABS: [string, string, (d: any, blk: boolean) => boolean][] = [
+  ['weapon', '⚔️', (d, b) => !b && d.category === 'weapon'], ['tool', '⛏️', (d, b) => !b && d.category === 'tool'], ['food', '🍖', (d, b) => !b && d.category === 'food'],
+  ['building', '🧱', (d, b) => b && ['building', 'modern'].includes(d.category)], ['heritage', '🕌', (d, b) => b && d.category === 'heritage'],
+  ['nature', '🌴', (d, b) => b && ['natural', 'wood', 'plant', 'ore'].includes(d.category)], ['decor', '✨', (d, b) => b && ['decor', 'special'].includes(d.category)],
+  ['vehicle', '🛶', (d, b) => !b && d.category === 'vehicle'], ['material', '📦', (d, b) => !b && ['material', 'heritage'].includes(d.category)],
+];
+const SEC_ICON: Record<string, string> = { weapon: '⚔️', tool: '⛏️', food: '🍖', block: '🧱', material: '📦', heritage: '💎', vehicle: '🛶' };
 function Inventory({ c, g }: { c: Ctx; g: Game }) {
-  const { t } = c, ui = g.ui, inf = !!ui.rules?.infinite; const [pick, setPick] = useState<number | null>(null); const [tab, setTab] = useState(inf ? 'catalog' : 'bag'); const [cat, setCat] = useState('all'); const [q, setQ] = useState('');
+  const { t } = c, ui = g.ui, inf = !!ui.rules?.infinite;
+  const [pick, setPick] = useState<number | null>(null); const [tab, setTab] = useState(ui.invTab || (inf ? 'catalog' : 'bag')); const [cat, setCat] = useState('building'); const [q, setQ] = useState('');
   const tap = (i: number) => { audio.play('ui_click'); if (pick === null) { if (ui.slots[i]) setPick(i); } else { g.moveSlot(pick, i); setPick(null); } };
   const S = (i: number) => { const s = ui.slots[i]; return <button key={i} className={'slot' + (pick === i ? ' pick' : '') + (i === ui.sel ? ' on' : '')} title={s ? g.name(g.def(s.k)) : ''} onClick={() => tap(i)}>{s && <><Icon g={g} k={s.k} />{s.n > 1 && <b>{s.n}</b>}</>}</button>; };
-  const all = [...c.content.blocks.filter((b: any) => b.shape !== 'liquid' && b.hardness >= 0), ...c.content.items].filter((d: any) => (cat === 'all' || d.category === cat) && (!q || (d.name_ar + d.name_en + d.key).toLowerCase().includes(q.toLowerCase())));
-  const recs = g.recipes();
+  // الحقيبة مقسّمة: الأسلحة، الأدوات، الطعام، المكعبات، المواد...
+  const bag = Array.from({ length: 27 }, (_, i) => i + 9), groups: Record<string, number[]> = {}, empty: number[] = [];
+  for (const i of bag) { const s = ui.slots[i]; if (!s) { empty.push(i); continue; } (groups[g.section(s.k)] ||= []).push(i); }
+  const tabDef = CAT_TABS.find((x) => x[0] === cat) || CAT_TABS[0];
+  const all = [...c.content.blocks.filter((b: any) => b.shape !== 'liquid' && b.hardness >= 0), ...c.content.items].filter((d: any) => q ? (d.name_ar + d.name_en + d.key).toLowerCase().includes(q.toLowerCase()) : tabDef[2](d, !!g.blockByKey[d.key]));
+  const recs = g.recipes(), table = g.nearStation('table');
+  const recGroups: Record<string, any[]> = {}; for (const r of recs) (recGroups[g.section(r.key)] ||= []).push(r);
   return <div className="ov"><div className="panel">
-    <div className="rowx" style={{ marginBottom: 10 }}><h2 style={{ margin: 0, flex: 1 }}>🎒 {t('hud.inventory')}</h2><button className="btn sm light" onClick={() => g.setPanel('')}>✕</button></div>
-    <div className="tabs"><button className={tab === 'bag' ? 'on' : ''} onClick={() => setTab('bag')}>{t('inv.bag')}</button>{inf && <button className={tab === 'catalog' ? 'on' : ''} onClick={() => setTab('catalog')}>{t('inv.catalog')}</button>}<button className={tab === 'craft' ? 'on' : ''} onClick={() => setTab('craft')}>🔨 {t('inv.craft')}</button></div>
-    {tab === 'bag' && <><div className="invgrid">{Array.from({ length: 27 }, (_, i) => S(i + 9))}</div>
-      <div className="rowx" style={{ margin: '8px 0' }}><button className="btn sm light" onClick={() => g.sortInv()}>↕ {t('inv.sort')}</button>{pick !== null && <button className="btn sm coral" onClick={() => { g.dropSlot(pick); setPick(null); }}>🗑️ {t('inv.discard')}</button>}<small style={{ color: 'var(--mute)' }}>{pick !== null ? g.name(g.def(ui.slots[pick]?.k)) + ' — ' + t('inv.move_hint2') : t('inv.move_hint')}</small></div></>}
-    {tab === 'catalog' && <><div className="rowx" style={{ marginBottom: 8 }}><input className="in" style={{ flex: 1, minWidth: 120 }} placeholder={t('inv.search')} value={q} onChange={(e) => setQ(e.target.value)} dir="auto" /><select className="in" style={{ width: 'auto' }} value={cat} onChange={(e) => setCat(e.target.value)}>{CATS.map((k) => <option key={k} value={k}>{t('cat.' + k)}</option>)}</select></div>
+    <div className="rowx" style={{ marginBottom: 10 }}><h2 style={{ margin: 0, flex: 1 }}>{g.station === 'table' ? '🔨 ' + t('craft.table') : '🎒 ' + t('hud.inventory')}</h2><small style={{ color: 'var(--mute)' }}>{t('inv.close_hint')}</small><button className="btn sm light" onClick={() => g.setPanel('')}>✕</button></div>
+    <div className="tabs"><button className={tab === 'bag' ? 'on' : ''} onClick={() => setTab('bag')}>🎒 {t('inv.bag')}</button>{inf && <button className={tab === 'catalog' ? 'on' : ''} onClick={() => setTab('catalog')}>🗂️ {t('inv.catalog')}</button>}<button className={tab === 'craft' ? 'on' : ''} onClick={() => setTab('craft')}>🔨 {t('inv.craft')}</button></div>
+    {tab === 'bag' && <div style={{ maxHeight: '46vh', overflow: 'auto' }}>
+      {SECTIONS.filter((k) => groups[k]).map((k) => <div key={k} className="invsec"><b>{SEC_ICON[k]} {t('sec.' + k)}</b><div className="invgrid">{groups[k].map(S)}</div></div>)}
+      {empty.length > 0 && <div className="invsec"><b>⬜ {t('sec.empty')} ({empty.length})</b><div className="invgrid">{empty.map(S)}</div></div>}
+      <div className="rowx" style={{ margin: '8px 0' }}><button className="btn sm light" onClick={() => g.sortInv()}>↕ {t('inv.sort')}</button>{pick !== null && <button className="btn sm coral" onClick={() => { g.dropSlot(pick); setPick(null); }}>🗑️ {t('inv.discard')}</button>}<small style={{ color: 'var(--mute)' }}>{pick !== null ? g.name(g.def(ui.slots[pick]?.k)) + ' — ' + t('inv.move_hint2') : t('inv.move_hint')}</small></div></div>}
+    {tab === 'catalog' && <><input className="in" style={{ marginBottom: 8 }} placeholder={t('inv.search')} value={q} onChange={(e) => setQ(e.target.value)} dir="auto" />
+      {!q && <div className="cattabs">{CAT_TABS.map(([k, ic]) => <button key={k} className={cat === k ? 'on' : ''} onClick={() => setCat(k)} title={t('cat2.' + k)}><span>{ic}</span><small>{t('cat2.' + k)}</small></button>)}</div>}
       <div className="cat">{all.map((d: any) => <button key={d.key} title={g.name(d)} onClick={() => { audio.play('ui_click'); g.give(d.key); }}><img src={iconURL(d, !!g.blockByKey[d.key])} alt={g.name(d)} /></button>)}</div>
       <small style={{ color: 'var(--mute)' }}>{t('inv.catalog_hint')}</small></>}
-    {tab === 'craft' && <div className="list" style={{ maxHeight: '44vh', overflow: 'auto' }}>{recs.sort((a, b) => +b.can - +a.can).map((r) => <div className="rec" key={r.key} style={{ opacity: r.can || inf ? 1 : 0.55 }}><img src={iconURL(r.def, !!g.blockByKey[r.key])} alt="" /><b style={{ minWidth: 110 }}>{g.name(r.def)} ×{r.out}</b>
-      <div className="need">{Object.keys(r.in).map((k) => <span key={k}>{g.name(g.def(k))} {g.count(k)}/{r.in[k]}</span>)}</div><button className="btn sm teal" disabled={!r.can} onClick={() => g.craft(r.key)}>{t('inv.make')}</button></div>)}</div>}
+    {tab === 'craft' && <div style={{ maxHeight: '46vh', overflow: 'auto' }}>
+      <div className={table || inf ? 'okmsg' : 'note2'}>{table || inf ? '🔨 ' + t('craft.at_table') : '🎒 ' + t('craft.hand_only')}</div>
+      {SECTIONS.filter((k) => recGroups[k]).map((k) => <div key={k} className="invsec"><b>{SEC_ICON[k]} {t('sec.' + k)}</b><div className="list">{recGroups[k].sort((a, b) => +(b.can && b.ok) - +(a.can && a.ok)).map((r) => <div className="rec" key={r.key} style={{ opacity: r.can && r.ok ? 1 : 0.55 }}><img src={iconURL(r.def, !!g.blockByKey[r.key])} alt="" /><b style={{ minWidth: 110 }}>{g.name(r.def)} ×{r.out}</b>
+        <div className="need">{Object.keys(r.in).map((k2) => <span key={k2}>{g.name(g.def(k2))} {g.count(k2)}/{r.in[k2]}</span>)}{r.at === 'table' && !r.ok && <span className="tag r">🔨 {t('craft.needs_table')}</span>}</div><button className="btn sm teal" disabled={!r.can || !r.ok} onClick={() => g.craft(r.key)}>{t('inv.make')}</button></div>)}</div></div>)}
+      <small style={{ color: 'var(--mute)' }}>🔥 {t('craft.furnace_hint')}</small></div>}
     <div style={{ marginTop: 10 }}><small style={{ color: 'var(--mute)' }}>{t('inv.hotbar')}</small><div className="invgrid">{Array.from({ length: 9 }, (_, i) => S(i))}</div></div>
   </div></div>;
 }
 
+function Furnace({ c, g }: { c: Ctx; g: Game }) {
+  const { t } = c, ui = g.ui, sm = g.smelting, recs = g.recipes('furnace'), fuels = g.fuelItems(), inf = !!ui.rules?.infinite;
+  return <div className="ov"><div className="panel">
+    <div className="rowx" style={{ marginBottom: 10 }}><h2 style={{ margin: 0, flex: 1 }}>🔥 {t('furnace.title')}</h2><small style={{ color: 'var(--mute)' }}>{t('inv.close_hint')}</small><button className="btn sm light" onClick={() => g.setPanel('')}>✕</button></div>
+    <div className="rowx" style={{ background: '#f2f6f8', borderRadius: 12, padding: 10, marginBottom: 10 }}><b>🪵 {t('furnace.fuel')}:</b>
+      {inf ? <span className="tag g">∞</span> : fuels.length ? fuels.map((k) => <span key={k} className="tag">{g.name(g.def(k))} ×{g.count(k)}</span>) : <span className="tag r">{t('furnace.no_fuel')}</span>}
+      {g.fuel >= 1 && <span className="tag g">🔥 {Math.floor(g.fuel)}</span>}</div>
+    {sm && <div className="li" style={{ marginBottom: 10 }}><img src={iconURL(g.def(sm.key), !!g.blockByKey[sm.key])} width={30} alt="" /><b style={{ flex: 1 }}>{g.name(g.def(sm.key))} — {t('furnace.left', { n: sm.left })}</b><div className="bar" style={{ width: 120, borderColor: '#cfdbe2' }}><i style={{ width: sm.t * 100 + '%', background: '#f08a2a' }} /></div><button className="btn sm light" onClick={() => { g.smelting = null; g.emit(true); }}>⏹</button></div>}
+    <div className="list" style={{ maxHeight: '44vh', overflow: 'auto' }}>{recs.sort((a, b) => +b.can - +a.can).map((r) => { const inK = Object.keys(r.in)[0], max = Math.floor(g.count(inK) / r.in[inK]);
+      return <div className="rec" key={r.key} style={{ opacity: r.can ? 1 : 0.55 }}><img src={iconURL(g.def(inK), !!g.blockByKey[inK])} alt="" /><span>➜</span><img src={iconURL(r.def, !!g.blockByKey[r.key])} alt="" /><b style={{ minWidth: 110 }}>{g.name(r.def)}</b>
+        <div className="need"><span>{g.name(g.def(inK))} {g.count(inK)}</span></div>
+        <button className="btn sm teal" disabled={!r.can || !!sm} onClick={() => g.smelt(r.key, 1)}>🔥 ×1</button><button className="btn sm light" disabled={!r.can || !!sm} onClick={() => g.smelt(r.key, max)}>{t('furnace.all')} ×{max}</button></div>; })}</div>
+  </div></div>;
+}
+
+function MapPanel({ c, g }: { c: Ctx; g: Game }) {
+  const { t } = c, ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => { const draw = () => { const cv = ref.current; if (!cv) return; const span = (g.settings.renderDistance * 2 + 1) * 16; g.drawMinimap(cv.getContext('2d')!, cv.width, span / cv.width); }; draw(); const i = setInterval(draw, 500); return () => clearInterval(i); }, []);
+  const [x, y, z] = g.ui.coords;
+  return <div className="ov" onClick={() => g.setPanel('')}><div className="panel" style={{ width: 'min(560px,100%)', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+    <div className="rowx" style={{ marginBottom: 8 }}><h2 style={{ margin: 0, flex: 1, textAlign: 'start' }}>🗺️ {t('map.title')}</h2><small style={{ color: 'var(--mute)' }}>{t('map.close_hint')}</small><button className="btn sm light" onClick={() => g.setPanel('')}>✕</button></div>
+    <canvas ref={ref} width={480} height={480} className="bigmap" />
+    <div className="rowx" style={{ justifyContent: 'center', marginTop: 8 }}><span className="tag b code">X {x} · Y {y} · Z {z}</span><span className="tag">🟢 {t('map.spawn')}</span><span className="tag g">🟡 {t('hud.players')}</span><span className="tag">⬆️ {t('map.you')}</span></div>
+  </div></div>;
+}
+
 function Chat({ c, g }: { c: Ctx; g: Game }) {
-  const { t } = c, ui = g.ui; const [v, setV] = useState(''); const end = useRef<HTMLDivElement>(null);
+  const { t } = c, ui = g.ui; const [v, setV] = useState(ui.chatDraft || ''); const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { ui.chatDraft = ''; }, []);
   useEffect(() => { end.current?.scrollIntoView(); }, [ui.chat.length]);
   const sendMsg = (e: any) => { e.preventDefault(); const s = v.trim(); if (s) g.chat(s); setV(''); };
   return <div className="ov clear" style={{ placeItems: 'end start' }}><div className="panel" style={{ width: 'min(480px,100%)', padding: 14 }}>
     <div className="rowx"><b style={{ flex: 1 }}>💬 {t('hud.chat')}</b><button className="btn sm light" onClick={() => g.setPanel('')}>✕</button></div>
     <div style={{ maxHeight: '38vh', overflow: 'auto', margin: '8px 0', display: 'grid', gap: 4 }}>{ui.chat.length === 0 && <small style={{ color: 'var(--mute)' }}>{t('chat.empty')}</small>}{ui.chat.map((m: any, i: number) => <div key={i} dir="auto" style={{ color: m.sys ? '#9a6b00' : undefined }}>{m.sys ? '• ' + m.text : <><b>{m.name}:</b> {m.text}</>}</div>)}<div ref={end} /></div>
-    <form className="rowx" onSubmit={sendMsg}><input className="in" style={{ flex: 1 }} autoFocus value={v} maxLength={200} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') g.setPanel(''); e.stopPropagation(); }} placeholder={t('chat.placeholder')} dir="auto" /><button className="btn sm teal">{t('chat.send')}</button></form></div></div>;
+    <form className="rowx" onSubmit={sendMsg}><input className="in" style={{ flex: 1 }} autoFocus value={v} maxLength={200} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') g.setPanel(''); e.stopPropagation(); }} placeholder={t('chat.placeholder_cmd')} dir="auto" /><button className="btn sm teal">{t('chat.send')}</button></form></div></div>;
 }
 
 function Missions({ c, g }: { c: Ctx; g: Game }) {

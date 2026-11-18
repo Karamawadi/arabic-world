@@ -319,7 +319,7 @@ class Hub {
     const deltas: Record<string, number[]> = {};
     for (const [k, d] of room.deltas) { const a: number[] = []; for (const [i, v] of d) a.push(i, v); deltas[k] = a; }
     const inv = get('SELECT slots,health,hunger,selected FROM inventories WHERE world_id=? AND user_id=?', w.id, u.id);
-    send(ws, { t: 'welcome', you: { id: u.id, name: p.name, role: p.role }, world: this.worldInfo(room), deltas, pos: p.p, rot: p.r, spawn: sp,
+    send(ws, { t: 'welcome', you: { id: u.id, name: p.name, role: p.role, admin }, world: this.worldInfo(room), deltas, pos: p.p, rot: p.r, spawn: sp,
       players: [...room.players.values()].filter((x) => x.id !== u.id).map((x) => room!.pub(x)),
       inv: inv ? { slots: J(inv.slots, []), health: inv.health, hunger: inv.hunger, sel: inv.selected } : null,
       env: room.envMsg(), missions: [...p.missions].map(([id, v]) => ({ id, ...v })), chal: room.chalMsg(),
@@ -393,6 +393,14 @@ class Hub {
       case 'wset': {
         if (p.role !== 'owner' && !p.admin) return;
         if (typeof m.time === 'number' && m.time >= 0 && m.time < 1) room.time = m.time;
+        // تغيير نمط اللعب للعالم كله (إبداعي، بقاء، ...)
+        if (typeof m.mode === 'string' && room.c.settings.mode_rules[m.mode] && m.mode !== room.w.mode) {
+          run('UPDATE worlds SET mode=?,updated_at=? WHERE id=?', m.mode, now(), room.w.id);
+          room.w.mode = m.mode; room.rules = room.c.settings.mode_rules[m.mode] || {}; room.challenge = null;
+          for (const x of room.players.values()) room.loadMissions(x);
+          room.bc({ t: 'wupd', world: this.worldInfo(room) });
+          room.bc({ t: 'sys', key: 'sys.mode', args: { name: p.name, mode: m.mode } });
+        }
         if (['clear', 'rain', 'storm', 'fog', 'sandstorm'].includes(m.weather)) { room.weather = m.weather; room.nextWeather += 120; }
         if (m.visitor_perm === 'build' || m.visitor_perm === 'view') {
           room.settings.visitor_perm = m.visitor_perm; run('UPDATE world_settings SET data=? WHERE world_id=?', JSON.stringify(room.settings), room.w.id);
@@ -431,8 +439,39 @@ class Hub {
         room.bc(room.chalMsg());
         return;
       }
+      case 'ignite': return this.ignite(room, p, m);
       case 'ping': return send(p.ws, { t: 'pong', n: m.n });
     }
+  }
+
+  // الديناميت: يشعله اللاعب، ثم ينفجر بعد 3 ثوانٍ ويهدم ما حوله ويشعل أي ديناميت قريب
+  ignite(room: Room, p: Player, m: any) {
+    const x = m.x, y = m.y, z = m.z, tnt = room.c.blockIds.tnt;
+    if (![x, y, z].every(Number.isInteger) || !tnt || !room.canBuild(p)) return;
+    const dx = x + 0.5 - p.p[0], dy = y + 0.5 - (p.p[1] + 1.5), dz = z + 0.5 - p.p[2];
+    if (dx * dx + dy * dy + dz * dz > 100 || room.blockAt(x, y, z) !== tnt) return;
+    this.fuse(room, x, y, z, 3000);
+  }
+  fuse(room: Room, x: number, y: number, z: number, ms: number) {
+    const k = x + ',' + y + ',' + z, r: any = room;
+    r.fuses ??= new Set<string>();
+    if (r.fuses.has(k) || r.fuses.size >= 64) return;
+    r.fuses.add(k); room.bc({ t: 'fuse', x, y, z, ms });
+    setTimeout(() => { r.fuses.delete(k); if (this.rooms.get(room.w.id) === room) this.explode(room, x, y, z); }, ms);
+  }
+  explode(room: Room, x: number, y: number, z: number) {
+    const c = room.c, tnt = c.blockIds.tnt, R = 3.2, L = room.settings.limit || 384, ed: number[] = [];
+    if (room.blockAt(x, y, z) !== tnt) return;
+    room.setBlock(x, y, z, 0); ed.push(x, y, z);
+    for (let oy = -4; oy <= 4; oy++) for (let oz = -4; oz <= 4; oz++) for (let ox = -4; ox <= 4; ox++) {
+      const d = Math.sqrt(ox * ox + oy * oy + oz * oz) + Math.random() * 0.8; if (d > R || (!ox && !oy && !oz)) continue;
+      const bx = x + ox, by = y + oy, bz = z + oz; if (by < 1 || by >= CH || Math.abs(bx) > L || Math.abs(bz) > L) continue;
+      const id = room.blockAt(bx, by, bz), b = c.blockById[id];
+      if (!id || !b || b.hardness < 0 || b.shape === 'liquid') continue;
+      if (id === tnt) { this.fuse(room, bx, by, bz, 500 + Math.floor(Math.random() * 700)); continue; }
+      room.setBlock(bx, by, bz, 0); ed.push(bx, by, bz);
+    }
+    room.bc({ t: 'boom', x, y, z, r: R, ed });
   }
 
   edit(room: Room, p: Player, m: any) {

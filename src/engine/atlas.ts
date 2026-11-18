@@ -68,6 +68,19 @@ export function drawTile(g: CanvasRenderingContext2D, ox: number, oy: number, [c
     case 'flower': for (let i = 0; i < 5; i++) { const x = 5 + R(22), h = 8 + R(14); line(x, T, x, T - h, c2, 1.5); g.fillStyle = c; g.beginPath(); g.arc(x, T - h, 3, 0, 7); g.fill(); g.fillStyle = shade(c, 0.5); g.fillRect(x - 1, T - h - 1, 2, 2); } break;
     case 'tuft': for (let i = 0; i < 22; i++) { const x = 2 + R(28); line(x, T, x + (r() - 0.5) * 8, 10 + R(14), i % 2 ? c : c2, 1.5); } break;
     case 'reed': for (let i = 0; i < 7; i++) { const x = 3 + R(26); line(x, T, x + (r() - 0.5) * 3, 1 + R(6), c, 2); g.fillStyle = c2; g.fillRect(x - 1, 2 + R(6), 3, 6); } break;
+    case 'table_top': { fill(c); for (let i = 0; i < 4; i++) { g.fillStyle = shade(c, (r() - 0.5) * 0.1); g.fillRect(2, 2 + i * 7, 28, 6); }
+      g.strokeStyle = c2; g.lineWidth = 2; g.strokeRect(1, 1, 30, 30); line(16, 2, 16, 30, c2, 1.5); line(2, 16, 30, 16, c2, 1.5); g.fillStyle = shade(c2, 0.2); for (const [x, y] of [[8, 8], [24, 8], [8, 24], [24, 24]]) g.fillRect(x - 1, y - 1, 2, 2); break; }
+    case 'table_side': { for (let row = 0; row < 4; row++) { g.fillStyle = shade(c, (r() - 0.5) * 0.12); g.fillRect(0, row * 8, T, 7); g.fillStyle = c2; g.fillRect(0, row * 8 + 7, T, 1); }
+      g.fillStyle = shade(c2, -0.1); g.fillRect(0, 0, T, 5); g.strokeStyle = '#9aa1a8'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(6, 26); g.lineTo(14, 12); g.stroke(); g.fillStyle = '#9aa1a8'; g.fillRect(9, 9, 9, 4);
+      g.strokeStyle = '#7a5530'; g.beginPath(); g.moveTo(20, 27); g.lineTo(26, 11); g.stroke(); g.fillStyle = '#c7ccd1'; g.fillRect(22, 9, 7, 5); break; }
+    case 'furnace': { for (let i = 0; i < 14; i++) { g.globalAlpha = 0.45; g.fillStyle = i % 2 ? shade(c, -0.15) : shade(c, 0.12); g.fillRect(R(T), R(T), 4 + R(6), 3 + R(4)); } g.globalAlpha = 1;
+      g.fillStyle = shade(c, -0.35); g.fillRect(6, 13, 20, 14); g.fillStyle = c2; g.fillRect(8, 15, 16, 10); g.fillStyle = '#f08a2a'; g.fillRect(10, 20, 12, 5); g.fillStyle = '#ffd04a'; g.fillRect(13, 21, 6, 3);
+      g.fillStyle = shade(c, -0.3); g.fillRect(5, 4, 22, 3); break; }
+    case 'furnace_top': { speck(40, shade(c, -0.12), 3, 0.5); g.strokeStyle = shade(c, -0.3); g.lineWidth = 2; g.strokeRect(3, 3, 26, 26); g.fillStyle = shade(c, -0.4); g.fillRect(12, 12, 8, 8); break; }
+    case 'tnt_side': { for (let x = 0; x < T; x += 8) { g.fillStyle = shade(c, x % 16 ? -0.08 : 0.05); g.fillRect(x, 0, 7, T); g.fillStyle = shade(c, -0.35); g.fillRect(x + 7, 0, 1, T); }
+      g.fillStyle = c2; g.fillRect(0, 11, T, 10); g.fillStyle = '#1c1c1c'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('TNT', 16, 16.5); break; }
+    case 'tnt_top': { g.fillStyle = c2; g.fillRect(0, 0, T, T); g.strokeStyle = shade(c, -0.1); g.lineWidth = 3; g.strokeRect(1.5, 1.5, 29, 29); g.fillStyle = c; for (const [x, y] of [[8, 8], [24, 8], [8, 24], [24, 24], [16, 16]]) { g.beginPath(); g.arc(x, y, 4.5, 0, 7); g.fill(); }
+      g.fillStyle = '#3a3a3a'; g.fillRect(15, 10, 2, 7); break; }
     default: speck(40, c2, 2, 0.6);
   }
   if (!cutout && pat !== 'water') { g.globalAlpha = 0.1; g.fillStyle = '#fff'; g.fillRect(0, 0, T, 1); g.fillRect(0, 0, 1, T); g.fillStyle = '#000'; g.fillRect(0, T - 1, T, 1); g.fillRect(T - 1, 0, 1, T); g.globalAlpha = 1; }
@@ -91,16 +104,22 @@ export function buildAtlas(blocks: any[]): Atlas {
   return { canvas, tiles, rows, main };
 }
 
-const iconCache = new Map<string, string>();
+const iconCache = new Map<string, string>(), cvCache = new Map<string, HTMLCanvasElement>();
 export function iconURL(def: any, isBlock: boolean): string {
   const k = (isBlock ? 'b:' : 'i:') + def.key + JSON.stringify(isBlock ? def.tex : def.icon);
   let u = iconCache.get(k); if (u) return u;
+  u = iconCanvas(def, isBlock).toDataURL(); iconCache.set(k, u); return u;
+}
+// أيقونة العنصر كلوحة 48×48 (تُستخدم أيضاً لبناء المجسم ثلاثي الأبعاد للعنصر في اليد)
+export function iconCanvas(def: any, isBlock: boolean, flat = false): HTMLCanvasElement {
+  const k = (isBlock ? 'b:' : 'i:') + (flat ? 'f:' : '') + def.key + JSON.stringify(isBlock ? def.tex : def.icon);
+  let cached = cvCache.get(k); if (cached) return cached;
   const cv = document.createElement('canvas'); cv.width = cv.height = 48; const g = cv.getContext('2d')!;
   if (isBlock) {
     const t = def.tex || {}, a = t.all || ['#888888', '#666666', 'grain'];
     const tmp = document.createElement('canvas'); tmp.width = T * 2; tmp.height = T; const tg = tmp.getContext('2d')!;
     drawTile(tg, 0, 0, t.top || a); drawTile(tg, T, 0, t.side || a);
-    if (def.shape === 'cross') g.drawImage(tmp, T, 0, T, T, 6, 6, 36, 36);
+    if (def.shape === 'cross' || flat) g.drawImage(tmp, T, 0, T, T, flat ? 0 : 6, flat ? 0 : 6, flat ? 48 : 36, flat ? 48 : 36);
     else {
       // مكعب متساوي القياس مبسّط
       g.save(); g.setTransform(1, -0.5, 1, 0.5, 0, 0); g.drawImage(tmp, 0, 0, T, T, -6, 18, 21, 21); g.restore();
@@ -124,9 +143,16 @@ export function iconURL(def: any, isBlock: boolean): string {
       case 'sword': g.strokeStyle = c; g.lineWidth = 6; g.beginPath(); g.moveTo(18, 30); g.lineTo(40, 8); g.stroke(); g.strokeStyle = c2; g.lineWidth = 4; g.beginPath(); g.moveTo(12, 26); g.lineTo(22, 36); g.moveTo(9, 39); g.lineTo(16, 32); g.stroke(); break;
       case 'shield': g.fillStyle = c2; g.beginPath(); g.moveTo(24, 5); g.lineTo(41, 11); g.lineTo(38, 32); g.lineTo(24, 43); g.lineTo(10, 32); g.lineTo(7, 11); g.closePath(); g.fill(); g.fillStyle = c; g.beginPath(); g.moveTo(24, 10); g.lineTo(36, 14); g.lineTo(34, 30); g.lineTo(24, 38); g.lineTo(14, 30); g.lineTo(12, 14); g.closePath(); g.fill(); break;
       case 'boat': g.fillStyle = c; g.beginPath(); g.moveTo(4, 26); g.lineTo(44, 26); g.lineTo(36, 38); g.lineTo(12, 38); g.closePath(); g.fill(); g.fillStyle = c2; g.beginPath(); g.moveTo(24, 6); g.lineTo(38, 23); g.lineTo(24, 23); g.closePath(); g.fill(); g.fillRect(22, 6, 2, 20); break;
+      case 'meat': g.fillStyle = c2; g.beginPath(); g.ellipse(24, 24, 17, 12, -0.4, 0, 7); g.fill(); g.fillStyle = c; g.beginPath(); g.ellipse(23, 23, 14, 9, -0.4, 0, 7); g.fill(); g.fillStyle = c2; g.beginPath(); g.ellipse(18, 21, 4, 2.5, -0.4, 0, 7); g.fill(); g.beginPath(); g.ellipse(28, 27, 3, 2, -0.4, 0, 7); g.fill(); break;
+      case 'drumstick': g.fillStyle = '#efe6d6'; g.fillRect(8, 30, 12, 6); g.beginPath(); g.arc(8, 30, 3.5, 0, 7); g.arc(8, 37, 3.5, 0, 7); g.fill(); g.fillStyle = c; g.beginPath(); g.ellipse(29, 20, 13, 11, -0.6, 0, 7); g.fill(); g.fillStyle = c2; g.beginPath(); g.ellipse(25, 17, 5, 3, -0.6, 0, 7); g.fill(); break;
+      case 'fish': g.fillStyle = c; g.beginPath(); g.ellipse(22, 24, 15, 8, 0, 0, 7); g.fill(); g.beginPath(); g.moveTo(34, 24); g.lineTo(44, 15); g.lineTo(44, 33); g.closePath(); g.fill(); g.fillStyle = c2; g.fillRect(14, 22, 16, 3); g.fillStyle = '#111'; g.beginPath(); g.arc(12, 22, 2, 0, 7); g.fill(); break;
+      case 'leather': g.fillStyle = c; g.beginPath(); g.moveTo(10, 10); g.lineTo(38, 8); g.lineTo(40, 22); g.lineTo(36, 40); g.lineTo(12, 38); g.lineTo(8, 24); g.closePath(); g.fill(); g.strokeStyle = c2; g.lineWidth = 2; g.setLineDash([3, 3]); g.strokeRect(14, 13, 20, 21); g.setLineDash([]); break;
+      case 'feather': g.strokeStyle = c2; g.lineWidth = 2; g.beginPath(); g.moveTo(10, 40); g.lineTo(38, 8); g.stroke(); g.fillStyle = c; g.beginPath(); g.moveTo(38, 8); g.quadraticCurveTo(44, 24, 20, 34); g.quadraticCurveTo(22, 14, 38, 8); g.fill(); g.strokeStyle = c2; g.lineWidth = 1; g.beginPath(); g.moveTo(16, 33); g.lineTo(37, 10); g.stroke(); break;
+      case 'powder': g.fillStyle = c2; g.beginPath(); g.ellipse(24, 34, 18, 7, 0, 0, 7); g.fill(); g.fillStyle = c; g.beginPath(); g.moveTo(8, 34); g.quadraticCurveTo(24, 6, 40, 34); g.closePath(); g.fill(); g.fillStyle = '#8a8a8a'; for (let i = 0; i < 9; i++) g.fillRect(14 + ((i * 7) % 20), 22 + ((i * 5) % 10), 2, 2); break;
+      case 'wool': g.fillStyle = c2; for (const [x, y, r] of [[16, 28, 10], [30, 28, 10], [23, 18, 10], [24, 32, 9]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } g.fillStyle = c; for (const [x, y, r] of [[16, 26, 8], [30, 26, 8], [23, 17, 8]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } break;
       case 'buggy': g.fillStyle = c; g.fillRect(8, 18, 32, 12); g.fillRect(16, 10, 16, 9); g.fillStyle = c2; g.beginPath(); g.arc(14, 33, 7, 0, 7); g.arc(34, 33, 7, 0, 7); g.fill(); break;
       default: g.fillStyle = c; g.fillRect(10, 10, 28, 28);
     }
   }
-  u = cv.toDataURL(); iconCache.set(k, u); return u;
+  cvCache.set(k, cv); return cv;
 }
